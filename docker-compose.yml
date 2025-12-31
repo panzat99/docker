@@ -1,18 +1,26 @@
-version: "3.1"
+networks:
+  nextcloud-collabora-network:
+    internal: true  # Secure internal communication for Nextcloud <-> Collabora
+  default:
+    driver: bridge
 
 services:
-  db:
+  # --- DATABASE SECTION ---
+  database:
     image: postgres:latest
-    container_name: db
+    container_name: database
     restart: always
     env_file:
       - ./.env
     environment:
       POSTGRES_PASSWORD: ${psql_pw}
+    networks:
+      - default
     volumes:
-      - /docker/dbdata:/var/lib/postgresql/data
-      - ./database_setup.sh:/docker-entrypoint-initdb.d/database_setup.sh
+      - ./services/databasedata:/var/lib/postgresql/
+      - ./database_setup.sh:/docker-entrypoint-initdb.d/database_setup.sh:ro
 
+  # --- CLOUD & OFFICE ---
   nextcloud:
     image: nextcloud:latest
     container_name: nextcloud
@@ -20,7 +28,10 @@ services:
     ports:
       - 10001:80
     depends_on:
-      - db
+      - database
+    networks:
+      - default
+      - nextcloud-collabora-network
     environment:
       POSTGRES_DB: ${nc_db}
       POSTGRES_USER: ${nc_user}
@@ -29,8 +40,28 @@ services:
       NEXTCLOUD_ADMIN_USER: ${nc_admin}
       NEXTCLOUD_ADMIN_PASSWORD: ${nc_apw}
     volumes:
-      - /docker/nc:/var/www/html/
+      - ./services/nextcloud/html:/var/www/html
+      - ./services/nextcloud/config:/var/www/html/config
+      - ./services/nextcloud/data:/var/www/html/data
+      - ./services/nextcloud/custom_apps:/var/www/html/custom_apps
 
+  collabora:
+    image: collabora/code:latest
+    container_name: collabora
+    restart: always
+    networks:
+      - nextcloud-collabora-network
+    expose:
+      - "9980"
+    environment:
+      # Replace with your actual public domain
+      - aliasgroup1=https://cloud.yourdomain.com:443
+      - DONT_GEN_SSL_CERT=true
+      - extra_params=--o:ssl.enable=false --o:ssl.termination=true
+    cap_add:
+      - MKNOD
+
+  # --- SECURITY & PASSWORD MANAGEMENT ---
   vaultwarden:
     image: vaultwarden/server:latest
     container_name: vaultwarden
@@ -38,9 +69,43 @@ services:
     ports:
       - 10002:80
     depends_on:
-      - db
+      - database
+    networks:
+      - default
     environment:
       ADMIN_TOKEN: ${vw_token}
       DATABASE_URL: postgresql://${vw_user}:${vw_pw}@${vw_host}/${vw_db}
     volumes:
-      - /docker/vw:/data
+      - ./services/vaultwarden:/data
+
+  # --- HOME AUTOMATION ---
+  homeassistant:
+    image: homeassistant/home-assistant:stable
+    container_name: homeassistant
+    restart: unless-stopped
+    # ports:
+    #   - 10005:8123
+    # Ports have to be mapped inside the configuration.yaml file via
+    # http:
+    #   server_port: xxx
+    privileged: true
+    network_mode: host
+    environment:
+      TZ: Europe/Berlin
+    volumes:
+      - ./services/homeassistant:/config
+      - /etc/localtime:/etc/localtime:ro
+      - /run/dbus:/run/dbus:ro
+
+  # --- MESSAGING & IOT ---
+  mosquitto:
+    image: eclipse-mosquitto:latest
+    container_name: mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./services/mosquitto/config:/mosquitto/config:rw
+      - ./services/mosquitto/data:/mosquitto/data:rw
+      - ./services/mosquitto/log:/mosquitto/log:rw
