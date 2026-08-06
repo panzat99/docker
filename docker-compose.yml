@@ -56,7 +56,7 @@ services:
       - 9980:9980
     environment:
       # Replace with your actual public domain
-      - aliasgroup1=https://collabora.tshfr.de:443
+      - aliasgroup1=https://collabora.tshfr.de:xxx
       - DONT_GEN_SSL_CERT=true
       - extra_params=--o:ssl.enable=false --o:ssl.termination=true
     cap_add:
