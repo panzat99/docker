@@ -17,7 +17,7 @@ services:
     networks:
       - default
     volumes:
-      - ./services/databasedata:/var/lib/postgresql/
+      - ./services/database:/var/lib/postgresql/
       - ./database_setup.sh:/docker-entrypoint-initdb.d/database_setup.sh:ro
 
   # --- CLOUD & OFFICE ---
@@ -50,12 +50,13 @@ services:
     container_name: collabora
     restart: always
     networks:
+      - default
       - nextcloud-collabora-network
-    expose:
-      - "9980"
+    ports:
+      - 9980:9980
     environment:
       # Replace with your actual public domain
-      - aliasgroup1=https://cloud.yourdomain.com:443
+      - aliasgroup1=https://collabora.tshfr.de:443
       - DONT_GEN_SSL_CERT=true
       - extra_params=--o:ssl.enable=false --o:ssl.termination=true
     cap_add:
@@ -109,3 +110,29 @@ services:
       - ./services/mosquitto/config:/mosquitto/config:rw
       - ./services/mosquitto/data:/mosquitto/data:rw
       - ./services/mosquitto/log:/mosquitto/log:rw
+
+  # --- FILE SYNCHRONIZATION ---
+  syncthing:
+    image: syncthing/syncthing
+    container_name: syncthing
+    hostname: syncthing
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - STGUIADDRESS=
+    volumes:
+      - ../Sync/:/var/syncthing
+    network_mode: host
+    restart: unless-stopped
+    healthcheck:
+      test: curl -fkLsS -m 2 127.0.0.1:8384/rest/noauth/health | grep -o --color=never OK || exit 1
+      interval: 1m
+      timeout: 10s
+      retries: 3
+
+  # --- TYPING TEST ---
+  monkeytype:
+    image: themythologist/monkeytype:frontend-latest
+    container_name: monkeytype
+    ports:
+      - 5000:5000
